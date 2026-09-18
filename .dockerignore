@@ -1,0 +1,48 @@
+# Build context exclusions.
+#
+# The Dockerfile deliberately copies explicit paths (app/, tests/, pdf/, README,
+# requirements) rather than `COPY . .`, so secrets are excluded by construction.
+# This file is defence in depth: it keeps the context small and guarantees that a
+# future `COPY . .` cannot bake a credential or a local scratch file into the
+# image. The challenge requires an image with no baked-in secrets.
+
+# --- Secrets -----------------------------------------------------------------
+.env
+.env.*
+!.env.example
+*.pem
+*.key
+*.p12
+credentials.json
+service-account*.json
+
+# --- VCS / editors -----------------------------------------------------------
+.git
+.gitignore
+.github
+.idea
+.vscode
+.kilo
+
+# --- Tooling / assistant state ----------------------------------------------
+.workbuddy-ai
+
+# --- Python ------------------------------------------------------------------
+__pycache__/
+**/__pycache__/
+*.py[cod]
+*.egg-info/
+.venv/
+venv/
+.pytest_cache/
+.mypy_cache/
+.ruff_cache/
+.coverage
+htmlcov/
+
+# --- Local scratch and test artifacts ----------------------------------------
+_server.log
+_*.log
+_*.json
+_*.txt
+tests/report_*.json

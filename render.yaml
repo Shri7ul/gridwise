@@ -1,0 +1,39 @@
+# Render Blueprint — https://render.com/docs/blueprint-spec
+# Deploy with: Dashboard -> New -> Blueprint -> point at this repository.
+services:
+  - type: web
+    name: gridwise-energy-optimization
+    runtime: python
+    plan: free
+    region: singapore
+    branch: main
+    buildCommand: pip install --upgrade pip && pip install -r requirements.txt
+    # Render injects $PORT; the app must bind 0.0.0.0 to be reachable.
+    startCommand: uvicorn app.main:app --host 0.0.0.0 --port $PORT
+    healthCheckPath: /health
+    envVars:
+      - key: PYTHON_VERSION
+        value: "3.12.7"
+      # Set these in the dashboard, never in this file:
+      #   GROQ_API_KEY   (or OPENAI_API_KEY, or LLM_API_KEY)
+      #   LLM_BASE_URL
+      #   LLM_MODEL
+      - key: LLM_BASE_URL
+        value: https://api.groq.com/openai/v1
+      # Groq retires models periodically; llama-3.3-70b-versatile now returns 404.
+      # Verify the current list before deploying:
+      #   curl -s https://api.groq.com/openai/v1/models -H "Authorization: Bearer $GROQ_API_KEY"
+      - key: LLM_MODEL
+        value: openai/gpt-oss-120b
+      - key: LLM_TIMEOUT_SECONDS
+        value: "12"
+      - key: REQUEST_DEADLINE_SECONDS
+        value: "25"
+      - key: LLM_MAX_RETRIES
+        value: "2"
+      - key: ALLOW_DETERMINISTIC_FALLBACK
+        value: "false"
+      - key: LOG_LEVEL
+        value: INFO
+      - key: GROQ_API_KEY
+        sync: false   # prompts for the value in the dashboard; never stored here
