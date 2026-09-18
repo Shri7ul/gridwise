@@ -85,7 +85,7 @@ From a clean environment:
 
 ```bash
 # 1. Clone
-git clone <your-repo-url> gridwise && cd gridwise
+git clone https://github.com/Shri7ul/gridwise.git && cd gridwise
 
 # 2. Create a virtual environment
 python -m venv .venv

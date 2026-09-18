@@ -31,3 +31,5 @@ _ps.txt
 _guide.txt
 _server.log
 tests/report_*.json
+.workbuddy-ai/
+.kilo/
