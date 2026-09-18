@@ -16,12 +16,14 @@ from __future__ import annotations
 import logging
 import math
 import time
+from pathlib import Path
 from typing import Any
 
 from fastapi import FastAPI, Request
 from fastapi.exceptions import RequestValidationError
 from fastapi.openapi.utils import get_openapi
-from fastapi.responses import JSONResponse
+from fastapi.responses import FileResponse, JSONResponse
+from fastapi.staticfiles import StaticFiles
 from pydantic import ValidationError
 
 from app.config import Settings, get_settings, redact
@@ -46,6 +48,9 @@ logger = logging.getLogger("gridwise")
 MAX_BODY_BYTES = 1_000_000
 RESERVED_KEYS = {"error", "detail", "message", "traceback", "status"}
 
+STATIC_DIR = Path(__file__).resolve().parent / "static"
+INDEX_HTML = STATIC_DIR / "index.html"
+
 settings: Settings = get_settings()
 app = FastAPI(
     title="GridWise — Smart Campus Energy Optimization API",
@@ -55,6 +60,13 @@ app = FastAPI(
     ),
     version=settings.app_version,
 )
+
+# The operator UI is served from the same origin as the API, so there is no CORS
+# surface and nothing extra to configure on Render: one service, one port.
+# Mounted only if the directory exists, so a stripped-down deployment that ships
+# just the API still starts cleanly.
+if STATIC_DIR.is_dir():
+    app.mount("/static", StaticFiles(directory=str(STATIC_DIR)), name="static")
 
 
 # --------------------------------------------------------------------------- #
@@ -155,12 +167,33 @@ async def health() -> HealthResponse:
 
 
 @app.get("/", include_in_schema=False)
-async def root() -> dict[str, str]:
+async def root():
+    """Serve the operator UI, falling back to a JSON index if it is absent."""
+    if INDEX_HTML.is_file():
+        return FileResponse(INDEX_HTML, media_type="text/html")
+    return JSONResponse(
+        {
+            "service": "gridwise-energy-optimization",
+            "health": "/health",
+            "optimize": "POST /optimize-energy",
+            "docs": "/docs",
+        }
+    )
+
+
+@app.get("/api", include_in_schema=False)
+async def api_index() -> dict[str, str]:
+    """Machine-readable service index.
+
+    ``GET /`` now returns the operator UI, so anything that used to discover the
+    endpoints by reading the root response should use this instead.
+    """
     return {
         "service": "gridwise-energy-optimization",
         "health": "/health",
         "optimize": "POST /optimize-energy",
         "docs": "/docs",
+        "ui": "/",
     }
 
 

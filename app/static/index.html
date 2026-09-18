@@ -1,0 +1,187 @@
+<!DOCTYPE html>
+<html lang="en" data-theme="dark">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>GridWise — Smart Campus Energy Optimizer</title>
+<meta name="description" content="LLM-assisted operator-note interpretation and cost-minimising 24-hour campus energy scheduling.">
+<link rel="stylesheet" href="/static/app.css">
+</head>
+<body>
+
+<a class="skip-link" href="#notes">Skip to the operator notes</a>
+
+<header class="topbar">
+  <div class="brand">
+    <span class="brand-mark" aria-hidden="true"></span>
+    <span class="brand-text">
+      <strong>GridWise</strong>
+      <small>Smart Campus Energy Optimizer</small>
+    </span>
+  </div>
+  <nav class="topbar-actions" aria-label="Service links">
+    <span id="status" class="pill pill-idle" role="status" aria-live="polite">
+      <span class="dot" aria-hidden="true"></span><span id="status-text">checking…</span>
+    </span>
+    <button id="theme-toggle" class="btn btn-ghost" type="button" aria-label="Switch colour theme">Theme</button>
+    <a class="btn btn-ghost" href="/docs">API docs</a>
+  </nav>
+</header>
+
+<main>
+
+  <!-- ---------------------------------------------------------------- intro -->
+  <section class="hero">
+    <h1>Turn operator notes into a cost-minimising 24-hour schedule.</h1>
+    <p>
+      Write the day's operational notes in plain language. The language model extracts
+      machine-checkable directives, deterministic guardrails validate them, and a linear
+      program finds the cheapest battery and grid schedule that satisfies every
+      constraint.
+    </p>
+    <p class="hero-meta">
+      <span>LLM interprets</span><span class="sep">→</span>
+      <span>guardrails validate</span><span class="sep">→</span>
+      <span>PuLP/CBC optimises</span>
+    </p>
+  </section>
+
+  <div class="layout">
+
+    <!-- ------------------------------------------------------------- inputs -->
+    <section class="panel" aria-labelledby="h-inputs">
+      <h2 id="h-inputs">Scenario</h2>
+
+      <h3 id="notes-heading">Operator notes</h3>
+      <p class="hint" id="notes-hint">
+        One note per line. Unrelated notes are expected and are reported as <code>no_op</code>.
+        Maximum 3.
+      </p>
+      <textarea id="notes" rows="4" maxlength="600"
+                aria-labelledby="notes-heading" aria-describedby="notes-hint"
+                spellcheck="false">Solar output will drop to about 20% from 1 PM to 3 PM.
+Do not charge the battery between 2 PM and 4 PM.
+The cafeteria menu changes tomorrow.</textarea>
+      <div class="row-between">
+        <span class="hint" id="note-count">3 / 3 notes</span>
+        <button type="button" class="btn btn-ghost btn-sm" id="load-sample">Trade-show sample notes</button>
+      </div>
+
+      <h3>Battery</h3>
+      <p class="hint">Capacity and rate limits apply to every hour.</p>
+      <div class="grid-2" id="battery-fields">
+        <label>Capacity (kWh)
+          <input type="number" id="b-capacity" value="500" min="0.1" step="any" required>
+        </label>
+        <label>Initial energy (kWh)
+          <input type="number" id="b-initial" value="200" min="0" step="any" required>
+        </label>
+        <label>Minimum energy (kWh)
+          <input type="number" id="b-minimum" value="50" min="0" step="any" required>
+        </label>
+        <label>Max charge (kWh/h)
+          <input type="number" id="b-charge" value="100" min="0" step="any" required>
+        </label>
+        <label>Max discharge (kWh/h)
+          <input type="number" id="b-discharge" value="100" min="0" step="any" required>
+        </label>
+      </div>
+
+      <h3>Hourly forecast</h3>
+      <p class="hint" id="hours-hint">
+        Demand, expected solar, and tariff for each hour. The default is a plausible
+        campus day; edit any cell.
+      </p>
+      <div class="table-scroll">
+        <table class="hours" id="hours-table" aria-describedby="hours-hint">
+          <thead>
+            <tr><th scope="col">Hour</th><th scope="col">Demand</th><th scope="col">Solar</th><th scope="col">Tariff</th></tr>
+          </thead>
+          <tbody id="hours-body"><!-- built by app.js --></tbody>
+        </table>
+      </div>
+
+      <div class="cta-row">
+        <button id="run" class="btn btn-primary" type="button">Optimize schedule</button>
+        <button id="reset" class="btn btn-ghost" type="button">Reset defaults</button>
+        <button id="export" class="btn btn-ghost" type="button" disabled>Copy request JSON</button>
+      </div>
+      <p class="hint" id="run-hint">
+        The free tier allows roughly five requests per minute — each interpretation
+        costs a few thousand tokens.
+      </p>
+    </section>
+
+    <!-- ------------------------------------------------------------ results -->
+    <section class="panel panel-results" aria-labelledby="h-results">
+      <h2 id="h-results">Result</h2>
+
+      <div id="error" class="alert alert-error" role="alert" hidden></div>
+      <div id="empty" class="empty">
+        <p>No result yet. Press <strong>Optimize schedule</strong>.</p>
+      </div>
+
+      <div id="results" hidden>
+        <p class="summary" id="plan-summary"></p>
+
+        <div class="stats">
+          <div class="stat">
+            <span class="stat-label">Total cost</span>
+            <span class="stat-value"><span id="m-cost">–</span><small>BDT</small></span>
+          </div>
+          <div class="stat">
+            <span class="stat-label">Grid energy</span>
+            <span class="stat-value"><span id="m-grid">–</span><small>kWh</small></span>
+          </div>
+          <div class="stat">
+            <span class="stat-label">Peak grid</span>
+            <span class="stat-value"><span id="m-peak">–</span><small>kWh</small></span>
+          </div>
+        </div>
+
+        <h3>Interpreted directives</h3>
+        <ul class="directives" id="directives"></ul>
+
+        <h3>Schedule</h3>
+        <div class="chart-wrap">
+          <div class="chart-legend" aria-hidden="true">
+            <span><i class="sw sw-grid"></i>Grid</span>
+            <span><i class="sw sw-solar"></i>Solar used</span>
+            <span><i class="sw sw-batt"></i>Battery energy</span>
+          </div>
+          <svg id="chart" class="chart" viewBox="0 0 720 260" role="img"
+               aria-labelledby="chart-title"><title id="chart-title">Hourly grid, solar and battery profile</title></svg>
+        </div>
+
+        <div class="table-scroll">
+          <table class="hours plan" id="plan-table">
+            <caption class="sr-only">Hourly plan returned by the optimiser</caption>
+            <thead>
+              <tr>
+                <th scope="col">Hz</th><th scope="col">Grid</th><th scope="col">Solar</th>
+                <th scope="col">Action</th><th scope="col">Batt kWh</th><th scope="col">After</th>
+              </tr>
+            </thead>
+            <tbody id="plan-body"></tbody>
+          </table>
+        </div>
+
+        <details class="raw">
+          <summary>Raw JSON response</summary>
+          <pre id="raw-json"></pre>
+        </details>
+      </div>
+    </section>
+  </div>
+
+  <footer class="foot">
+    <p>
+      BUP CSE Fest 2026 · GridWise preliminary.
+      This page talks to <code>POST /optimize-energy</code> on the same origin.
+    </p>
+  </footer>
+</main>
+
+<script src="/static/app.js"></script>
+</body>
+</html>

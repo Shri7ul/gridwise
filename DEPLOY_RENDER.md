@@ -4,9 +4,9 @@ Everything in this guide has been verified against the repository. Where a step
 could not be executed here (no Render account, no Docker daemon), that is stated  
 explicitly rather than assumed.
 
-```
-   ErrorsHide Resolver error at requestBody.content.application/json.schema.properties.hours.items.$refCould not resolve reference: Invalid object key "$defs" at position 0 in "/$defs/HourInput": key not found in objectResolver error at requestBody.content.application/json.schema.properties.battery.$refCould not resolve reference: Invalid object key "$defs" at position 0 in "/$defs/BatteryInput": key not found in object
-```
+The service is single-port: the operator UI is served at `/` and the API alongside
+it, so one Render web service covers both. There is nothing to configure for the
+front end.
 
 ## Before you start — two blocking items
 
@@ -164,6 +164,14 @@ Then verify from outside:
 
 ```bash
 export BASE=https://<your-service-name>.onrender.com
+
+# 0. The UI must be served — status 200 and content-type text/html
+curl -s -o /dev/null -w "UI %{http_code} %{content_type}\n" "$BASE/"
+# UI 200 text/html; charset=utf-8
+
+#    …and the JSON index must have moved to /api
+curl -s "$BASE/api"
+# {"service":"gridwise-energy-optimization",…,"ui":"/"}
 
 # 1. Readiness — must be exactly {"status":"ok"}
 curl -s "$BASE/health"
@@ -352,6 +360,10 @@ it currently contains placeholder text.
 - [ ] `LLM_MODEL=openai/gpt-oss-120b`, `PYTHON_VERSION=3.12.7`
 - [ ] `ALLOW_DETERMINISTIC_FALLBACK=false`
 - [ ] Log shows `llm_configured=True`
+- [ ] `curl "$BASE/"` returns **200 `text/html`** — the UI is served
+- [ ] `curl "$BASE/api"` returns the JSON index with `"ui":"/"` (it moved off `/`)
+- [ ] The UI loads in a browser, **Optimize schedule** returns a plan, and the page
+      is usable at phone width (no horizontal scroll)
 - [ ] Remote `curl "$BASE/health"` returns `{"status":"ok"}`
 - [ ] Remote `POST /optimize-energy` returns 200 with a 24-hour plan
 - [ ] `python tests/run_public_samples.py --base-url "$BASE" --delay 15` → 10/10

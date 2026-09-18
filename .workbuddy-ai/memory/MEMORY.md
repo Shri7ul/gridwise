@@ -49,14 +49,36 @@ cost-minimizing battery/grid schedule → deterministic summary**. Rules live in
 - **Existence is not reachability.** Asserting a schema is *present* passes while every
   internal `$ref` dangles. Walk the document and resolve each pointer.
 
+## Frontend (served by FastAPI, same origin)
+
+- **`/` serves the operator UI; the JSON index is at `/api`.** They swapped when the UI was
+  added. `render.yaml` health check uses `/health`, so it is unaffected. Confirm which revision
+  a running server is on before trusting any result: `curl -s $BASE/api` must contain `"ui":"/"`.
+- UI is three files in `app/static/` (`index.html`, `app.css`, `app.js`), **dependency-free by
+  design**: no CDN, no web font, no charting library, no build step — the judging environment
+  may be offline, and a reviewer can read all of it. The SVG chart is hand-rolled with
+  `createElementNS` and coloured from live CSS custom properties.
+- **Never let a scroll container's min-content width escape a grid item.** A block-level grid
+  item is `min-width: auto`, so a wide table propagates its min-content up through
+  `.table-scroll` → `.panel` → `.layout` and stretches the page past the viewport. Park
+  `min-width: 0` on the grid and its items, and give the wide table explicit column budgets so
+  it overflows its own scroll container instead.
+- **`tests/verify_frontend.js` needs the result panel rendered to catch layout bugs.** The bare
+  page measured a clean 390px while the post-run page overflowed by 30px. It also needs
+  Playwright, installed into the managed Node workspace, not declared in `requirements.txt`;
+  Node resolves `require` relative to the *script*, so `NODE_PATH` must point at that workspace.
+- **Docker ships the UI only because `COPY app ./app` happens to include `app/static/`.**
+  `test_dockerfile_ships_the_frontend_static_assets` asserts that coverage and names the missing
+  assets, because the COPY-existence test alone passes while the deployed page is blank.
+
 ## Testing
 
 - `tests/run_public_samples.py --offline` is the judge-parity harness (10 published cases);
   `--base-url` runs the same checks over live HTTP. **`--delay 15` is required on a free Groq
   key** (8000 tokens/minute, ~1500–2500 per request → ~5 cases max back-to-back).
-- Suite: `test_docker_contract.py` (9), `test_config.py` (10), `test_llm_stage.py` (14),
-  `test_api_e2e.py` (15) = 48, plus the 10-case harness. `pytest` is not preinstalled in the
-  isolated venv — install it first.
+- Suite: `test_docker_contract.py` (10), `test_config.py` (10), `test_llm_stage.py` (14),
+  `test_api_e2e.py` (16), `test_frontend.py` (15) = **65 passed**. `pytest` is not preinstalled
+  in the isolated venv — install it first.
 - The stub suites override `_post` to return a queued **string** (matching `_post`'s contract;
   returning an object is a real bug that was hit once).
 - **Stub-only suites hide credential-path bugs.** The `.env`-not-loaded and retired-model bugs

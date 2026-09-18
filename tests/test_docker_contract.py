@@ -203,6 +203,61 @@ def test_every_dockerfile_copy_source_exists():
     assert not missing, f"COPY sources missing from the build context: {missing}"
 
 
+def test_dockerfile_ships_the_frontend_static_assets():
+    """The UI must reach the image, not just the API.
+
+    ``COPY app ./app`` happens to include ``app/static/``, but that is incidental:
+    a future ``COPY app/*.py ./app/`` would still pass
+    ``test_every_dockerfile_copy_source_exists`` while silently serving a 404 for
+    every asset, leaving the deployed page blank. Assert the coverage explicitly.
+    """
+    static_dir = REPO_ROOT / "app" / "static"
+    required = ["index.html", "app.css", "app.js"]
+    for name in required:
+        assert (static_dir / name).is_file(), f"missing frontend asset: app/static/{name}"
+
+    # Which host paths does the Dockerfile copy into the image?
+    copied = []
+    for line in _dockerfile_text().splitlines():
+        stripped = line.strip()
+        if not stripped.startswith("COPY"):
+            continue
+        parts = stripped.split()
+        if any(p.startswith("--from=") for p in parts):
+            continue
+        args = [p for p in parts[1:] if not p.startswith("--")]
+        copied.extend(args[:-1])
+
+    def _covers(rel: str) -> bool:
+        for src in copied:
+            src_clean = src.rstrip("/.")
+            if not src_clean:
+                continue
+            if rel == src_clean or rel.startswith(src_clean + "/"):
+                return True
+        return False
+
+    uncovered = [f"app/static/{n}" for n in required if not _covers(f"app/static/{n}")]
+    assert not uncovered, (
+        f"the Dockerfile does not copy the frontend assets into the image: {uncovered}. "
+        f"COPY sources seen: {copied}"
+    )
+
+    # .dockerignore must not be excluding them either.
+    ignore = DOCKERIGNORE.read_text(encoding="utf-8")
+    active = [
+        ln.strip()
+        for ln in ignore.splitlines()
+        if ln.strip() and not ln.strip().startswith("#") and not ln.strip().startswith("!")
+    ]
+    for pattern in active:
+        bare = pattern.rstrip("/")
+        if bare in {"static", "app/static", "app", "*.html", "*.css", "*.js"}:
+            raise AssertionError(
+                f".dockerignore excludes the frontend assets via {pattern!r}"
+            )
+
+
 def test_dockerfile_binds_all_interfaces_and_honours_port():
     """The challenge requires 0.0.0.0 and the documented port."""
     text = _dockerfile_text()

@@ -16,6 +16,7 @@ battery parameters) and 1–3 short natural-language operator notes, the service
 ## Table of contents
 
 - [Architecture](#architecture)
+- [Operator web UI](#operator-web-ui)
 - [Quickstart (local)](#quickstart-local)
 - [Environment variables](#environment-variables)
 - [Model and provider](#model-and-provider)
@@ -76,6 +77,65 @@ deterministic code, and only then applied to the optimization model.
 | `app/optimizer.py` | PuLP LP, plan extraction, final replay gate |
 | `app/summary.py` | Deterministic `plan_summary` text |
 | `app/fallback.py` | Disabled-by-default degraded-availability interpreter |
+
+---
+
+## Operator web UI
+
+The service serves its own front end at **`/`**, from the same origin and the same
+port as the API. There is nothing extra to configure: the Render service you
+already deploy is the UI.
+
+Open the root URL and you get a page that lets you:
+
+- write the day's operator notes (one per line, max 3);
+- edit the battery parameters and every cell of the 24-hour forecast — the table
+  is pre-filled with a plausible campus day, so it runs without any typing;
+- press **Optimize schedule** and read the result: total cost, grid energy, peak
+  grid, one card per interpreted directive, a hand-rolled SVG chart of the hourly
+  grid/solar/battery profile, the full 24-row schedule with the hours touched by a
+  directive highlighted, and the raw JSON response.
+
+Route summary:
+
+| Route | Serves |
+| --- | --- |
+| `GET /` | the operator UI (`app/static/index.html`) |
+| `GET /api` | the JSON service index — `{"service":…,"health":…,"optimize":…,"docs":…,"ui":"/"}` |
+| `GET /health` | readiness probe |
+| `GET /docs` | Swagger UI |
+| `POST /optimize-energy` | the optimizer |
+| `GET /static/*` | the UI's CSS and JS |
+
+> `GET /` used to return the JSON index. That moved to `GET /api` when the UI was
+> added. Anything that parsed the old root response must switch to `/api`.
+
+Design constraints behind it:
+
+- **No external dependencies.** No CDN, no web font, no charting library, no build
+  step. `app/static/` is three hand-written files (`index.html`, `app.css`,
+  `app.js`, ~1250 lines total) shipped as-is. A judging environment with no
+  network still renders the whole page, and a reviewer can read all of it.
+- **Dependency-free chart.** The SVG chart is built with `createElementNS` and
+  coloured from the live CSS custom properties, so it follows the light/dark
+  toggle without any hard-coded hex. It plots 24 grid bars, the solar contribution
+  stacked on each bar, and the battery energy level as a line with 24 points.
+- **Same origin.** Serving the UI from the API origin means no CORS configuration
+  and one service to deploy rather than two.
+- **Errors are real.** A `400`/`422`/`500` is rendered with its taxonomy-appropriate
+  explanation and any `details` the API returned — the page never claims success
+  when the request failed.
+- **Accessible.** Keyboard-operable, labelled controls, `aria-live` on the status
+  pill and error region, a skip link, a visible focus ring, and
+  `prefers-reduced-motion` respected.
+
+`tests/test_frontend.py` enforces the delivery contract from the source: the page
+is served as HTML, every asset URL resolves, no duplicate element `id`s, every
+`id` the JS looks up exists, every class the JS applies has a CSS rule, no external
+URLs, no credential or local path in the served bytes, and the request body the
+page builds passes `OptimizationRequest`. Runtime behaviour (the chart, the 390px
+layout, the live run) is verified by `tests/verify_frontend.js` in a real headless
+Chromium — see [`tests/README.md`](tests/README.md).
 
 ---
 
@@ -318,7 +378,17 @@ export BASE=http://127.0.0.1:8000        # local
 curl -s "$BASE/health"
 ```
 
-**2. Optimize — minimal inline body**
+**2. Service index** (JSON — the UI lives at `/`, not here)
+
+```bash
+curl -s "$BASE/api"
+# {"service":"gridwise-energy-optimization","health":"/health",
+#  "optimize":"POST /optimize-energy","docs":"/docs","ui":"/"}
+```
+
+Open `$BASE/` in a browser for the operator UI.
+
+**3. Optimize — minimal inline body**
 
 ```bash
 curl -s -X POST "$BASE/optimize-energy" \
@@ -366,7 +436,7 @@ curl -s -X POST "$BASE/optimize-energy" \
   }' | python -m json.tool
 ```
 
-**3. Error behaviour**
+**4. Error behaviour**
 
 ```bash
 # malformed JSON -> 400
@@ -444,7 +514,7 @@ means both the interpretation and the schedule would satisfy an independent judg
 ## Running the tests
 
 ```bash
-# Docker contract: solver runtime deps, build context, secret hygiene — no daemon needed
+# Docker contract: solver runtime deps, build context, secret hygiene, static assets
 python tests/test_docker_contract.py
 
 # Configuration: .env loading, precedence, credential resolution — no key needed
@@ -456,20 +526,34 @@ python tests/test_llm_stage.py
 # Full HTTP pipeline tests, provider stubbed with ground truth
 python tests/test_api_e2e.py
 
+# Frontend delivery contract: routing, asset URLs, DOM ids, no external deps
+python tests/test_frontend.py
+
 # Public sample runner (see above — needs a credential or the fallback flag).
 # Add --delay 15 when using a free-tier key; see Deploy on Render.
 python tests/run_public_samples.py --offline
 ```
 
+Or all of it at once:
+
+```bash
+python -m pytest tests/ -q        # 65 passed
+```
+
 | Suite | Tests | Covers |
 | --- | --- | --- |
-| `tests/test_docker_contract.py` | 9 | CBC exists in the wheel, every non-glibc library CBC needs is provided by an apt package the Dockerfile installs, COPY sources exist, binds `0.0.0.0`, honours `$PORT`, non-root, no build-arg or COPY secrets |
+| `tests/test_docker_contract.py` | 10 | CBC exists in the wheel, every non-glibc library CBC needs is provided by an apt package the Dockerfile installs, COPY sources exist, **the frontend assets reach the image**, binds `0.0.0.0`, honours `$PORT`, non-root, no build-arg or COPY secrets |
 | `tests/test_config.py` | 10 | `.env` is actually read, real env vars win over `.env`, credential priority, honest "unconfigured" reporting, repository-wide secret sweep, `.env.example` placeholder integrity |
 | `tests/test_llm_stage.py` | 14 | defensive JSON extraction (fences, prose, trailing commas), retry recovery, repair pass, unsupported-type rejection, secret redaction |
 | `tests/test_api_e2e.py` | 16 | `/health`, full pipeline over HTTP for all 10 public cases, response schema, totals, 400/422/500 taxonomy, non-finite input rejection, Swagger request-body contract, **OpenAPI `$ref` resolvability**, secret-leak sweep |
+| `tests/test_frontend.py` | 15 | `GET /` is HTML and `/api` is still the JSON index, every asset URL resolves with the right MIME type, no duplicate element `id`s, labels/`aria` point at real ids, every id the JS looks up exists, every class the JS applies is styled, no external dependency, no credential or local path in the served bytes, the page's request body passes `OptimizationRequest`, every field the UI reads exists in the response model, JS directive labels match the backend enum |
 | `tests/run_public_samples.py` | 10 cases | independent rule replay against a live or in-process service, plus optimization-quality ratio |
 
 All suites pass on Python 3.12 and 3.13.
+
+`tests/verify_frontend.js` and `tests/capture_request.js` are browser harnesses run
+separately (they need Playwright, which is deliberately not a service dependency).
+See [`tests/README.md`](tests/README.md).
 
 **Verified results** (Python 3.13, `openai/gpt-oss-120b` via Groq, live provider):
 
@@ -689,16 +773,28 @@ kept private during the event, and made public after the submission deadline.
 │   ├── fallback.py          # disabled-by-default degraded interpreter
 │   ├── guardrails.py        # deterministic validation + constraint folding
 │   ├── llm_interpreter.py   # prompt, JSON parsing, retry, repair
-│   ├── main.py              # FastAPI app, routes, error taxonomy
+│   ├── main.py              # FastAPI app, routes, error taxonomy, static mount
 │   ├── models.py            # strict Pydantic models
 │   ├── optimizer.py         # PuLP LP + replay gate
-│   └── summary.py           # deterministic plan summary
+│   ├── summary.py           # deterministic plan summary
+│   └── static/              # the operator UI — served at /, no build step
+│       ├── index.html       #   markup
+│       ├── app.css          #   theme tokens, layout, light/dark
+│       └── app.js           #   request building, SVG chart, rendering
+├── demo_inputs/             # the 10 public sample inputs, extracted verbatim
 ├── pdf/                     # official documents and public sample cases
 ├── tests/
+│   ├── README.md              # how to run the browser harnesses
+│   ├── capture_request.js     # browser: print the real request/response
+│   ├── verify_frontend.js     # browser: 33 runtime assertions
 │   ├── run_public_samples.py  # independent judge-parity harness
 │   ├── test_api_e2e.py        # HTTP pipeline tests
+│   ├── test_config.py         # settings tests
+│   ├── test_docker_contract.py# packaging + static-asset tests
+│   ├── test_frontend.py       # frontend delivery contract
 │   └── test_llm_stage.py      # LLM-stage unit tests
 ├── Dockerfile
+├── DEPLOY_RENDER.md
 ├── render.yaml
 ├── requirements.txt
 ├── .env.example
