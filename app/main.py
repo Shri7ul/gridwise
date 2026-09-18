@@ -20,6 +20,7 @@ from typing import Any
 
 from fastapi import FastAPI, Request
 from fastapi.exceptions import RequestValidationError
+from fastapi.openapi.utils import get_openapi
 from fastapi.responses import JSONResponse
 from pydantic import ValidationError
 
@@ -292,6 +293,72 @@ def _sample_body() -> dict[str, Any]:
     }
 
 
+def _inline_schema_for_swagger() -> dict[str, Any]:
+    """Return a request schema whose ``$ref``s Swagger UI can actually resolve.
+
+    ``OptimizationRequest.model_json_schema()`` is *self-contained*: Pydantic nests
+    the dependent models under a top-level ``$defs`` key and points at them with the
+    document-root-relative pointer ``#/$defs/HourInput``. That pointer is only
+    correct while the schema sits at the document root. Pasted inline under
+    ``requestBody.content.application/json.schema`` it is one level down, so
+    Swagger UI resolves the ref against the document root, finds no ``$defs``
+    there, and renders
+
+        Resolver error at requestBody...properties.hours.items.$ref
+        Could not resolve reference: Invalid object key "$defs"
+
+    FastAPI's own ``components/schemas`` is the right home for these models, so
+    reachable refs are rewritten to point there. ``_custom_openapi`` copies the
+    ``$defs`` block into ``components/schemas`` so the rewritten refs land on a
+    real object.
+    """
+    schema = OptimizationRequest.model_json_schema()
+    definitions = schema.pop("$defs", {})
+    schema = _rewrite_defs_refs(schema)
+    for name, definition in definitions.items():
+        _EXTRA_COMPONENT_SCHEMAS[name] = _rewrite_defs_refs(definition)
+    return schema
+
+
+def _rewrite_defs_refs(node: Any) -> Any:
+    """Point every ``#/$defs/X`` ref at ``#/components/schemas/X`` instead."""
+    if isinstance(node, dict):
+        rewritten = {}
+        for key, value in node.items():
+            if key == "$ref" and isinstance(value, str) and value.startswith("#/$defs/"):
+                value = value.replace("#/$defs/", "#/components/schemas/", 1)
+            rewritten[key] = _rewrite_defs_refs(value)
+        return rewritten
+    if isinstance(node, list):
+        return [_rewrite_defs_refs(item) for item in node]
+    return node
+
+
+# Nested request models (HourInput, BatteryInput) that must appear in
+# components/schemas for the rewritten refs to resolve.
+_EXTRA_COMPONENT_SCHEMAS: dict[str, Any] = {}
+
+
+def _custom_openapi() -> dict[str, Any]:
+    """Generate the document, then merge in the nested request models."""
+    if app.openapi_schema:
+        return app.openapi_schema
+    schema = get_openapi(
+        title=app.title,
+        version=app.version,
+        description=app.description,
+        routes=app.routes,
+    )
+    components = schema.setdefault("components", {}).setdefault("schemas", {})
+    for name, definition in _EXTRA_COMPONENT_SCHEMAS.items():
+        components.setdefault(name, definition)
+    app.openapi_schema = schema
+    return schema
+
+
+app.openapi = _custom_openapi  # type: ignore[method-assign]
+
+
 @app.post(
     "/optimize-energy",
     response_model=OptimizationResponse,
@@ -299,14 +366,17 @@ def _sample_body() -> dict[str, Any]:
         # The handler reads the raw body itself (so malformed JSON maps to 400
         # instead of a framework 422 traceback). That makes the body invisible to
         # FastAPI's automatic schema inference, which is why Swagger UI would
-        # otherwise show "No parameters" with no input box. Declaring the body
-        # here documents it for Swagger and any generated client while leaving
-        # the runtime parsing path untouched.
+        # otherwise show "No parameters" with no input box.
+        #
+        # Note: declaring this as a real `Body(...)` parameter instead would fix
+        # the docs but break the error taxonomy, because FastAPI would validate
+        # before the handler runs and answer 422 where Problem Statement s6.1
+        # requires 400. Keep it as openapi_extra.
         "requestBody": {
             "required": True,
             "content": {
                 "application/json": {
-                    "schema": OptimizationRequest.model_json_schema(),
+                    "schema": _inline_schema_for_swagger(),
                     "example": _sample_body(),
                 }
             },

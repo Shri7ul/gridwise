@@ -1,0 +1,110 @@
+[
+  {
+    "id": "SAMPLE-01",
+    "label": "Solar cleaning + distractor",
+    "file": "SAMPLE-01.json",
+    "notes": 2,
+    "directives": [
+      "solar_reduction",
+      "no_op"
+    ],
+    "reference_cost_bdt": 38365
+  },
+  {
+    "id": "SAMPLE-02",
+    "label": "Battery charging maintenance",
+    "file": "SAMPLE-02.json",
+    "notes": 1,
+    "directives": [
+      "no_charge_window"
+    ],
+    "reference_cost_bdt": 42885
+  },
+  {
+    "id": "SAMPLE-03",
+    "label": "Emergency reserve as percentage",
+    "file": "SAMPLE-03.json",
+    "notes": 1,
+    "directives": [
+      "minimum_battery_reserve"
+    ],
+    "reference_cost_bdt": 35480
+  },
+  {
+    "id": "SAMPLE-04",
+    "label": "No-discharge protection test",
+    "file": "SAMPLE-04.json",
+    "notes": 1,
+    "directives": [
+      "no_discharge_window"
+    ],
+    "reference_cost_bdt": 40495
+  },
+  {
+    "id": "SAMPLE-05",
+    "label": "Temporary feeder grid cap",
+    "file": "SAMPLE-05.json",
+    "notes": 1,
+    "directives": [
+      "max_grid_window"
+    ],
+    "reference_cost_bdt": 33950
+  },
+  {
+    "id": "SAMPLE-06",
+    "label": "Multiple notes with distractor",
+    "file": "SAMPLE-06.json",
+    "notes": 3,
+    "directives": [
+      "solar_reduction",
+      "no_charge_window",
+      "no_op"
+    ],
+    "reference_cost_bdt": 34090
+  },
+  {
+    "id": "SAMPLE-07",
+    "label": "Reserve plus transformer cap",
+    "file": "SAMPLE-07.json",
+    "notes": 2,
+    "directives": [
+      "minimum_battery_reserve",
+      "max_grid_window"
+    ],
+    "reference_cost_bdt": 38550
+  },
+  {
+    "id": "SAMPLE-08",
+    "label": "Separate charge/discharge outages",
+    "file": "SAMPLE-08.json",
+    "notes": 2,
+    "directives": [
+      "no_charge_window",
+      "no_discharge_window"
+    ],
+    "reference_cost_bdt": 37665
+  },
+  {
+    "id": "SAMPLE-09",
+    "label": "Reduction wording normalization",
+    "file": "SAMPLE-09.json",
+    "notes": 2,
+    "directives": [
+      "solar_reduction",
+      "no_op"
+    ],
+    "reference_cost_bdt": 34873
+  },
+  {
+    "id": "SAMPLE-10",
+    "label": "Multi-constraint evening operation",
+    "file": "SAMPLE-10.json",
+    "notes": 3,
+    "directives": [
+      "minimum_battery_reserve",
+      "max_grid_window",
+      "no_op"
+    ],
+    "reference_cost_bdt": 41620
+  }
+]

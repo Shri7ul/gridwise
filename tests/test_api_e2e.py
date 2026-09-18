@@ -187,6 +187,88 @@ def test_openapi_declares_request_body_for_swagger():
     assert "example" in media, "Swagger would open an empty box without an example"
 
 
+def _resolve_pointer(document: dict, pointer: str):
+    """Resolve a local JSON pointer like '#/components/schemas/HourInput'.
+
+    Returns ``(found, node)``. Deliberately strict: this mirrors what Swagger UI's
+    resolver does, so a pointer that fails here is exactly the one a judge would
+    see fail in the browser console.
+    """
+    if not pointer.startswith("#/"):
+        return False, None
+    node = document
+    for raw in pointer[2:].split("/"):
+        part = raw.replace("~1", "/").replace("~0", "~")
+        if isinstance(node, dict) and part in node:
+            node = node[part]
+        else:
+            return False, None
+    return True, node
+
+
+def _all_refs(node, path=""):
+    """Yield ``(json_path, $ref)`` for every ``$ref`` in a document."""
+    if isinstance(node, dict):
+        for key, value in node.items():
+            if key == "$ref" and isinstance(value, str):
+                yield path, value
+            else:
+                yield from _all_refs(value, f"{path}/{key}")
+    elif isinstance(node, list):
+        for index, value in enumerate(node):
+            yield from _all_refs(value, f"{path}/{index}")
+
+
+def test_openapi_request_body_schema_refs_all_resolve():
+    """Every ``$ref`` in the served document must resolve.
+
+    Regression test for a real bug: the body schema was inlined as
+    ``OptimizationRequest.model_json_schema()``. Pydantic emits the nested models
+    under a schema-local ``$defs`` and refers to them with the document-root
+    relative pointer ``#/$defs/HourInput``. Inlined under ``requestBody`` that
+    pointer no longer resolves, and /docs showed:
+
+        Resolver error at requestBody...properties.hours.items.$ref
+        Could not resolve reference: Invalid object key "$defs"
+
+    Checking that ``schema`` merely exists (as the test above does) passes while
+    this is broken, because the schema is present — it is its internal pointers
+    that dangle. Assert reachability instead.
+    """
+    spec = app.openapi()
+
+    broken = [
+        (where, ref)
+        for where, ref in _all_refs(spec)
+        if not _resolve_pointer(spec, ref)[0]
+    ]
+    assert not broken, f"unresolvable $ref(s) in the OpenAPI document: {broken}"
+
+    # The nested input models must be published where the refs point.
+    schemas = spec["components"]["schemas"]
+    for name in ("HourInput", "BatteryInput"):
+        assert name in schemas, f"{name} missing from components/schemas"
+
+    hours_items = (
+        spec["paths"]["/optimize-energy"]["post"]["requestBody"]["content"]
+        ["application/json"]["schema"]["properties"]["hours"]["items"]
+    )
+    found, node = _resolve_pointer(spec, hours_items["$ref"])
+    assert found, f"hours.items $ref does not resolve: {hours_items['$ref']}"
+    assert sorted(node["properties"]) == [
+        "demand_kwh",
+        "hour",
+        "solar_kwh",
+        "tariff_bdt_per_kwh",
+    ]
+
+    battery = spec["paths"]["/optimize-energy"]["post"]["requestBody"]["content"][
+        "application/json"
+    ]["schema"]["properties"]["battery"]
+    found, _ = _resolve_pointer(spec, battery["$ref"])
+    assert found, f"battery $ref does not resolve: {battery['$ref']}"
+
+
 def test_openapi_example_is_a_valid_24_hour_scenario():
     """A pre-filled example that 422s would be worse than showing nothing."""
     spec = app.openapi()

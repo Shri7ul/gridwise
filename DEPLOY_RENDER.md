@@ -1,18 +1,20 @@
 # Deploying GridWise on Render (Free Tier)
 
-Everything in this guide has been verified against the repository. Where a step
-could not be executed here (no Render account, no Docker daemon), that is stated
+Everything in this guide has been verified against the repository. Where a step  
+could not be executed here (no Render account, no Docker daemon), that is stated  
 explicitly rather than assumed.
 
----
+```
+   ErrorsHide Resolver error at requestBody.content.application/json.schema.properties.hours.items.$refCould not resolve reference: Invalid object key "$defs" at position 0 in "/$defs/HourInput": key not found in objectResolver error at requestBody.content.application/json.schema.properties.battery.$refCould not resolve reference: Invalid object key "$defs" at position 0 in "/$defs/BatteryInput": key not found in object
+```
 
 ## Before you start — two blocking items
 
 ### 1. Rotate the Groq key
 
-The key currently in `.env` was, at one point, written into `.env.example`.
-That file **is** committed to the repository (`.gitignore` whitelists it with
-`!.env.example`). Even though it has since been removed, treat the key as
+The key currently in `.env` was, at one point, written into `.env.example`.  
+That file **is** committed to the repository (`.gitignore` whitelists it with  
+`!.env.example`). Even though it has since been removed, treat the key as  
 exposed:
 
 1. Go to <https://console.groq.com/keys>
@@ -21,7 +23,7 @@ exposed:
 
 ### 2. Do not raise the Uvicorn worker count
 
-Render's free tier gives **512 MB RAM**. One worker is correct — leave the start
+Render's free tier gives **512 MB RAM**. One worker is correct — leave the start  
 command alone. See "Free-tier behaviour" below.
 
 ---
@@ -56,7 +58,7 @@ git remote add origin https://github.com/<your-username>/gridwise.git
 git push -u origin main
 ```
 
-> The challenge asks for the repository to be **private during the event** and made
+> The challenge asks for the repository to be **private during the event** and made  
 > public after the submission deadline. GitHub private repos work with Render.
 
 ---
@@ -65,12 +67,12 @@ git push -u origin main
 
 Two things could break Render's build. Both are already handled:
 
-| Risk | Status |
-| --- | --- |
+| Risk                                 | Status                                                                                                                                                |
+| ------------------------------------ | ----------------------------------------------------------------------------------------------------------------------------------------------------- |
 | `pulp` needs a C compiler to install | **Safe.** `pulp 3.2.2` publishes `pulp-3.2.2-py3-none-any.whl` (pure Python, any platform). No build step, and the CBC solver ships inside the wheel. |
-| CBC solver missing at runtime | **Safe.** `pulp/solverdir/cbc/linux/i64/cbc` is inside the wheel. On Render's native Python runtime this is the same binary verified locally. |
+| CBC solver missing at runtime        | **Safe.** `pulp/solverdir/cbc/linux/i64/cbc` is inside the wheel. On Render's native Python runtime this is the same binary verified locally.         |
 
-There is **no** `apt-get` step possible on Render's native Python runtime, which is
+There is **no** `apt-get` step possible on Render's native Python runtime, which is  
 why the fallback Docker image exists (step 7).
 
 ---
@@ -82,7 +84,7 @@ why the fallback Docker image exists (step 7).
 1. Render Dashboard → **New** → **Blueprint**
 2. Connect your GitHub account and pick the `gridwise` repository
 3. Render reads `render.yaml` and shows the service it will create
-4. It will prompt for `GROQ_API_KEY` (declared with `sync: false`) — paste the
+4. It will prompt for `GROQ_API_KEY` (declared with `sync: false`) — paste the  
    **new** key from step 1
 5. Click **Apply**
 
@@ -92,24 +94,23 @@ If you prefer to configure by hand:
 
 1. **New** → **Web Service** → connect the repository
 2. Settings:
-
-   | Field | Value |
-   | --- | --- |
-   | Name | `gridwise-energy-optimization` |
-   | Runtime | **Python 3** |
-   | Region | Singapore (closest to Bangladesh) |
-   | Branch | `main` |
-   | Build Command | `pip install --upgrade pip && pip install -r requirements.txt` |
-   | Start Command | `uvicorn app.main:app --host 0.0.0.0 --port $PORT` |
-   | Instance Type | **Free** |
-   | Health Check Path | `/health` |
-
+   | Field             | Value                                                          |
+   | ----------------- | -------------------------------------------------------------- |
+   | Name              | `gridwise-energy-optimization`                                 |
+   | Runtime           | **Python 3**                                                   |
+   | Region            | Singapore (closest to Bangladesh)                              |
+   | Branch            | `main`                                                         |
+   | Build Command     | `pip install --upgrade pip && pip install -r requirements.txt` |
+   | Start Command     | `uvicorn app.main:app --host 0.0.0.0 --port $PORT`             |
+   | Instance Type     | **Free**                                                       |
+   | Health Check Path | `/health`                                                      |
 3. Add the environment variables exactly as in step 4.
 
-> `--host 0.0.0.0` is mandatory. Render routes traffic to the container's external
+> `--host 0.0.0.0` is mandatory. Render routes traffic to the container's external  
 > interface; binding `127.0.0.1` produces a service that starts but never responds.
 
 ---
+
 
 ## Step 4 — Environment variables
 
@@ -117,35 +118,36 @@ Add these under **Environment** in the dashboard.
 
 **Required — the credential (set exactly one):**
 
-| Key | Value |
-| --- | --- |
+| Key            | Value                                                |
+| -------------- | ---------------------------------------------------- |
 | `GROQ_API_KEY` | your **new** `gsk_...` key — mark it as a **secret** |
 
 **Required — settings (`render.yaml` already supplies these in Option A):**
 
-| Key | Value | Why |
-| --- | --- | --- |
-| `LLM_BASE_URL` | `https://api.groq.com/openai/v1` | Groq's OpenAI-compatible endpoint |
-| `LLM_MODEL` | `openai/gpt-oss-120b` | verified working; the previous Llama default now 404s |
-| `PYTHON_VERSION` | `3.12.7` | matches the version tested locally |
-| `ALLOW_DETERMINISTIC_FALLBACK` | `false` | **leave this on `false`** — see the warning below |
-| `LLM_TIMEOUT_SECONDS` | `12` | per-attempt provider timeout |
-| `REQUEST_DEADLINE_SECONDS` | `25` | keeps the request inside Render's limits |
-| `LLM_MAX_RETRIES` | `2` | retries after a malformed model response |
-| `LOG_LEVEL` | `INFO` | |
+| Key                            | Value                            | Why                                                   |
+| ------------------------------ | -------------------------------- | ----------------------------------------------------- |
+| `LLM_BASE_URL`                 | `https://api.groq.com/openai/v1` | Groq's OpenAI-compatible endpoint                     |
+| `LLM_MODEL`                    | `openai/gpt-oss-120b`            | verified working; the previous Llama default now 404s |
+| `PYTHON_VERSION`               | `3.12.7`                         | matches the version tested locally                    |
+| `ALLOW_DETERMINISTIC_FALLBACK` | `false`                          | **leave this on `false`** — see the warning below     |
+| `LLM_TIMEOUT_SECONDS`          | `12`                             | per-attempt provider timeout                          |
+| `REQUEST_DEADLINE_SECONDS`     | `25`                             | keeps the request inside Render's limits              |
+| `LLM_MAX_RETRIES`              | `2`                              | retries after a malformed model response              |
+| `LOG_LEVEL`                    | `INFO`                           |                                                       |
 
 **Do not set `PORT` yourself.** Render injects it; the app reads `$PORT`.
 
 ### ⚠️ Keep `ALLOW_DETERMINISTIC_FALLBACK=false`
 
-The Participant Guide (§09) states that if the required LLM is absent from the
-operator-note interpretation path, the submission is **not eligible for the final
-preliminary shortlist**. With this flag `true`, a provider outage would route
-requests through `app/fallback.py`, a keyword interpreter — exactly the situation
-the rule targets. On `false`, the endpoint returns a controlled 422 instead, which
+The Participant Guide (§09) states that if the required LLM is absent from the  
+operator-note interpretation path, the submission is **not eligible for the final  
+preliminary shortlist**. With this flag `true`, a provider outage would route  
+requests through `app/fallback.py`, a keyword interpreter — exactly the situation  
+the rule targets. On `false`, the endpoint returns a controlled 422 instead, which  
 is the safe and spec-sanctioned behaviour.
 
 ---
+
 
 ## Step 5 — Deploy and verify
 
@@ -155,7 +157,7 @@ Render builds and deploys automatically. Watch the log for:
 gridwise starting: version=1.0.0 provider=groq model=openai/gpt-oss-120b llm_configured=True fallback_enabled=False configured_port=<port>
 ```
 
-`llm_configured=True` is the line that matters. If it says `False`, the credential
+`llm_configured=True` is the line that matters. If it says `False`, the credential  
 did not reach the service — recheck the variable name and that you saved it.
 
 Then verify from outside:
@@ -212,8 +214,8 @@ curl -s -X POST "$BASE/optimize-energy" \
   }' | python -m json.tool
 ```
 
-> On **Windows**, curl quoting can silently strip the payload and you will get
-> `400 {"error":"request body is empty"}`. If that happens, save the JSON to a
+> On **Windows**, curl quoting can silently strip the payload and you will get  
+> `400 {"error":"request body is empty"}`. If that happens, save the JSON to a  
 > file and post it with `--data-binary` instead — that path is verified:
 >
 > ```bash
@@ -221,54 +223,54 @@ curl -s -X POST "$BASE/optimize-energy" \
 >   -H "Content-Type: application/json" --data-binary @body.json
 > ```
 
-You should get HTTP 200 with a 24-entry `hourly_plan`. The three directives are
+You should get HTTP 200 with a 24-entry `hourly_plan`. The three directives are  
 keyed by `directive_type` (not `type`), and each carries an `applies` flag:
 
-| `directive_type` | `applies` | `structured_adjustment` |
-| --- | --- | --- |
-| `solar_reduction` | `true` | `{"hours":[13,14],"factor":0.2}` |
-| `no_charge_window` | `true` | `{"hours":[14,15]}` |
-| `no_op` | `false` | `null` |
+| `directive_type`   | `applies` | `structured_adjustment`          |
+| ------------------ | --------- | -------------------------------- |
+| `solar_reduction`  | `true`    | `{"hours":[13,14],"factor":0.2}` |
+| `no_charge_window` | `true`    | `{"hours":[14,15]}`              |
+| `no_op`            | `false`   | `null`                           |
 
-Measured on this configuration: HTTP 200, `total_cost_bdt` = 54404.0,
-`total_grid_kwh` = 4071.0, `peak_grid_kwh` = 305.0. The top-level keys are
-`scenario_id`, `directive_interpretation`, `hourly_plan`, `plan_summary`,
-`total_cost_bdt`, `total_grid_kwh`, `peak_grid_kwh` — note **`plan_summary`**,
+Measured on this configuration: HTTP 200, `total_cost_bdt` = 54404.0,  
+`total_grid_kwh` = 4071.0, `peak_grid_kwh` = 305.0. The top-level keys are  
+`scenario_id`, `directive_interpretation`, `hourly_plan`, `plan_summary`,  
+`total_cost_bdt`, `total_grid_kwh`, `peak_grid_kwh` — note **`plan_summary`**,  
 which is generated deterministically in `app/summary.py` and never by the model.
 
-> These totals are specific to this example payload. Do not treat them as golden
-> values to assert against — if you change any hourly demand or solar figure the
-> cost moves. The invariant worth checking is that `total_grid_kwh` equals
-> `sum(hourly_plan[*].grid_kwh)` and the final `battery_energy_after_kwh` returns
+> These totals are specific to this example payload. Do not treat them as golden  
+> values to assert against — if you change any hourly demand or solar figure the  
+> cost moves. The invariant worth checking is that `total_grid_kwh` equals  
+> `sum(hourly_plan[*].grid_kwh)` and the final `battery_energy_after_kwh` returns  
 > to the initial 200.0.
 
 ### Run the full public suite against the deployed URL
 
-This is the strongest end-to-end check — it replays all ten published cases and
+This is the strongest end-to-end check — it replays all ten published cases and  
 compares costs and every constraint against the official expectations:
 
 ```bash
 python tests/run_public_samples.py --base-url "$BASE" --delay 15
 ```
 
-`--delay 15` matters: Groq's free tier allows **8000 tokens/minute** and each
-interpretation costs roughly 1500–2500, so an unpaced run exhausts the bucket
+`--delay 15` matters: Groq's free tier allows **8000 tokens/minute** and each  
+interpretation costs roughly 1500–2500, so an unpaced run exhausts the bucket  
 after about five cases and the remainder fail for quota reasons, not correctness.
 
 ---
 
 ## Step 6 — Free-tier behaviour you must plan for
 
-| Behaviour | Detail | What to do |
-| --- | --- | --- |
-| **Cold starts** | A free instance sleeps after ~15 minutes idle. The next request can take 30–60 s to wake, which exceeds the judge's 30 s per-request timeout and scores zero for that case. | Keep it warm with a periodic ping, or rely on the Docker fallback. See below. |
-| **512 MB RAM** | Ample for one Uvicorn worker plus CBC. | Do not add `--workers`. |
-| **Monthly hours cap** | Free instances get 750 instance-hours/month, which covers one always-on service. | Keep it to a single service. |
-| **No `apt-get`** | Native Python runtime cannot install system packages. | Not needed — CBC ships in the wheel. |
+| Behaviour             | Detail                                                                                                                                                                      | What to do                                                                    |
+| --------------------- | --------------------------------------------------------------------------------------------------------------------------------------------------------------------------- | ----------------------------------------------------------------------------- |
+| **Cold starts**       | A free instance sleeps after ~15 minutes idle. The next request can take 30–60 s to wake, which exceeds the judge's 30 s per-request timeout and scores zero for that case. | Keep it warm with a periodic ping, or rely on the Docker fallback. See below. |
+| **512 MB RAM**        | Ample for one Uvicorn worker plus CBC.                                                                                                                                      | Do not add `--workers`.                                                       |
+| **Monthly hours cap** | Free instances get 750 instance-hours/month, which covers one always-on service.                                                                                            | Keep it to a single service.                                                  |
+| **No `apt-get`**      | Native Python runtime cannot install system packages.                                                                                                                       | Not needed — CBC ships in the wheel.                                          |
 
 ### Keeping it warm
 
-A free uptime pinger that hits `/health` every 10 minutes prevents the sleep.
+A free uptime pinger that hits `/health` every 10 minutes prevents the sleep.  
 Alternatively, ping it yourself shortly before the judging window:
 
 ```bash
@@ -277,14 +279,15 @@ curl -s "$BASE/health" && echo " awake"
 
 ---
 
+
 ## Step 7 — The Docker fallback image (required deliverable)
 
-The Guide requires a **pullable container image** as a fallback execution path,
-because the hosted endpoint may be unavailable during judging. This is worth
+The Guide requires a **pullable container image** as a fallback execution path,  
+because the hosted endpoint may be unavailable during judging. This is worth  
 rubric points on its own, not just insurance.
 
-Docker is not installed on this machine, so the build and push have **not** been
-executed. Everything else has been verified: the Dockerfile installs the correct
+Docker is not installed on this machine, so the build and push have **not** been  
+executed. Everything else has been verified: the Dockerfile installs the correct  
 solver library, copies only the files it needs, and binds `0.0.0.0`.
 
 On any machine with Docker Desktop:
@@ -315,26 +318,27 @@ docker inspect --format='{{index .RepoDigests 0}}' \
   <your-dockerhub-user>/gridwise-energy:1.0.0
 ```
 
-> Registry images on Docker Hub free accounts can be removed after prolonged
-> inactivity. The Guide says the image "must remain pullable during evaluation",
+> Registry images on Docker Hub free accounts can be removed after prolonged  
+> inactivity. The Guide says the image "must remain pullable during evaluation",  
 > so push it close to the deadline and confirm the repo is public.
 
-Update the README's Docker section with your real registry path, tag, and digest —
+Update the README's Docker section with your real registry path, tag, and digest —  
 it currently contains placeholder text.
 
 ---
 
+
 ## Step 8 — Troubleshooting
 
-| Symptom | Cause | Fix |
-| --- | --- | --- |
-| Deploy fails, log mentions `No matching distribution` | `PYTHON_VERSION` not set or invalid | Set `PYTHON_VERSION=3.12.7` |
-| Log says `llm_configured=False` | Credential missing or misnamed | Must be one of `GROQ_API_KEY`, `OPENAI_API_KEY`, `LLM_API_KEY` |
-| Every request returns 422 | Provider unreachable, **or** free-tier token quota exhausted | Check the Render log for `HTTP 429`/quota messages; wait ~60 s and retry |
-| Every request returns 404 `model_not_found` | Groq retired the model | Run `curl -s https://api.groq.com/openai/v1/models -H "Authorization: Bearer $GROQ_API_KEY"` and update `LLM_MODEL` |
-| Service starts but curls hang | Bound to `127.0.0.1` | Start command must be `--host 0.0.0.0 --port $PORT` |
-| First request times out, then works | Free-tier cold start | Warm it with a `/health` ping before judging |
-| 500 on every call | Provider error | Log is redacted; the response deliberately hides details. Check `llm_configured` and quota first. |
+| Symptom                                               | Cause                                                        | Fix                                                                                                                 |
+| ----------------------------------------------------- | ------------------------------------------------------------ | ------------------------------------------------------------------------------------------------------------------- |
+| Deploy fails, log mentions `No matching distribution` | `PYTHON_VERSION` not set or invalid                          | Set `PYTHON_VERSION=3.12.7`                                                                                         |
+| Log says `llm_configured=False`                       | Credential missing or misnamed                               | Must be one of `GROQ_API_KEY`, `OPENAI_API_KEY`, `LLM_API_KEY`                                                      |
+| Every request returns 422                             | Provider unreachable, **or** free-tier token quota exhausted | Check the Render log for `HTTP 429`/quota messages; wait ~60 s and retry                                            |
+| Every request returns 404 `model_not_found`           | Groq retired the model                                       | Run `curl -s https://api.groq.com/openai/v1/models -H "Authorization: Bearer $GROQ_API_KEY"` and update `LLM_MODEL` |
+| Service starts but curls hang                         | Bound to `127.0.0.1`                                         | Start command must be `--host 0.0.0.0 --port $PORT`                                                                 |
+| First request times out, then works                   | Free-tier cold start                                         | Warm it with a `/health` ping before judging                                                                        |
+| 500 on every call                                     | Provider error                                               | Log is redacted; the response deliberately hides details. Check `llm_configured` and quota first.                   |
 
 ---
 

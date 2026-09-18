@@ -212,6 +212,16 @@ scenario object over it — the box is a plain JSON editor.
 > declaration Swagger would show *"No parameters"* and no input box. The example
 > shown in `/docs` is verified by
 > `test_documented_example_round_trips_through_the_endpoint`.
+>
+> Declaring it as a real `Body(...)` parameter instead would fix the docs but
+> break the error taxonomy, since FastAPI would validate before the handler runs
+> and answer `422` where the spec requires `400`. The schema is instead built by
+> `_inline_schema_for_swagger()`, which rewrites Pydantic's document-root-relative
+> `#/$defs/X` pointers to `#/components/schemas/X` and registers the nested
+> `HourInput` / `BatteryInput` models there. Inlining `model_json_schema()`
+> directly makes `/docs` report *"Invalid object key `$defs`"*.
+> `test_openapi_request_body_schema_refs_all_resolve` guards this by resolving
+> every `$ref` in the served document.
 
 ### `POST /optimize-energy`
 
@@ -456,7 +466,7 @@ python tests/run_public_samples.py --offline
 | `tests/test_docker_contract.py` | 9 | CBC exists in the wheel, every non-glibc library CBC needs is provided by an apt package the Dockerfile installs, COPY sources exist, binds `0.0.0.0`, honours `$PORT`, non-root, no build-arg or COPY secrets |
 | `tests/test_config.py` | 10 | `.env` is actually read, real env vars win over `.env`, credential priority, honest "unconfigured" reporting, repository-wide secret sweep, `.env.example` placeholder integrity |
 | `tests/test_llm_stage.py` | 14 | defensive JSON extraction (fences, prose, trailing commas), retry recovery, repair pass, unsupported-type rejection, secret redaction |
-| `tests/test_api_e2e.py` | 15 | `/health`, full pipeline over HTTP for all 10 public cases, response schema, totals, 400/422/500 taxonomy, non-finite input rejection, Swagger request-body contract, secret-leak sweep |
+| `tests/test_api_e2e.py` | 16 | `/health`, full pipeline over HTTP for all 10 public cases, response schema, totals, 400/422/500 taxonomy, non-finite input rejection, Swagger request-body contract, **OpenAPI `$ref` resolvability**, secret-leak sweep |
 | `tests/run_public_samples.py` | 10 cases | independent rule replay against a live or in-process service, plus optimization-quality ratio |
 
 All suites pass on Python 3.12 and 3.13.
@@ -468,13 +478,16 @@ All suites pass on Python 3.12 and 3.13.
 | `test_docker_contract.py` | 9/9 |
 | `test_config.py` | 10/10 |
 | `test_llm_stage.py` | 14/14 |
-| `test_api_e2e.py` | 15/15 |
+| `test_api_e2e.py` | 16/16 |
 | `run_public_samples.py` (live LLM, `--delay 15`) | 10/10, quality ratio 1.0000, p95 3.3 s |
 
 Both guard suites are negative-controlled rather than decorative:
 
 - `test_docker_contract.py` — reverting the Dockerfile to `libgomp1` fails 2 tests; `libstdc++6` passes 9/9.
 - `test_config.py` — planting a realistic key in a committed file fails the sweep; removing it passes.
+- `test_openapi_request_body_schema_refs_all_resolve` — inlining `model_json_schema()` directly
+  makes it fail on `#/$defs/HourInput` and `#/$defs/BatteryInput`, the exact two refs the browser
+  reported; `_inline_schema_for_swagger()` passes.
 
 **Verified from a fresh clone** (only committed files, no `.env`, credential
 supplied as a platform environment variable — the deployment path):
@@ -482,7 +495,7 @@ supplied as a platform environment variable — the deployment path):
 | Check | Result |
 | --- | --- |
 | `cp .env.example .env` with no key, then start | `/health` → `{"status":"ok"}`, `provider=unconfigured`, clear warning, no crash |
-| All suites in the clone | config 10/10, llm stage 14/14, e2e 15/15 |
+| All suites in the clone | config 10/10, llm stage 14/14, e2e 16/16 |
 | Public samples, live provider from the clone | 10/10, quality ratio 1.0000, p95 3.3 s |
 | Env-var precedence | platform `LLM_MODEL` beats a conflicting `.env` value; `.env` wins when no env var is set |
 

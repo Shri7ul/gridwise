@@ -37,6 +37,17 @@ cost-minimizing battery/grid schedule → deterministic summary**. Rules live in
 - **A route that reads `await request.body()` must declare `openapi_extra.requestBody`,**
   or Swagger UI shows "No parameters" with no input box (FastAPI cannot infer a body it
   never receives as a parameter).
+- **Never inline `Model.model_json_schema()` into `openapi_extra`.** Pydantic's output is
+  self-contained: nested models go under a schema-local `$defs` and are referenced by the
+  **document-root-relative** pointer `#/$defs/X`. Inlined one level down under `requestBody`,
+  Swagger resolves against the root, finds no `$defs`, and reports
+  *"Could not resolve reference: Invalid object key `$defs`"*. Build the schema with
+  `_inline_schema_for_swagger()` (rewrites `#/$defs/X` → `#/components/schemas/X`) and publish
+  the nested models via `components/schemas`. **Do not "fix" this with a real `Body(...)`
+  parameter** — FastAPI then validates before the handler and answers 422 where the spec
+  requires 400.
+- **Existence is not reachability.** Asserting a schema is *present* passes while every
+  internal `$ref` dangles. Walk the document and resolve each pointer.
 
 ## Testing
 
