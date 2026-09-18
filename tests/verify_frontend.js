@@ -192,6 +192,160 @@ const check = (label, ok, detail = "") => {
 
   await page.screenshot({ path: path.join(OUT, "05-mobile.png"), fullPage: true });
 
+  // ------------------------------------------------------------------------
+  // Paste-a-whole-JSON panel. This is the judge-facing path, so exercise both
+  // the happy route and the failure routes a mistake would land on.
+  // ------------------------------------------------------------------------
+  console.log(`\n=== paste-a-JSON panel ===`);
+  await page.setViewportSize({ width: 1440, height: 1400 });
+  await page.waitForTimeout(200);
+
+  // The sample button must produce something that loads.
+  await page.click("#json-sample");
+  await page.waitForTimeout(300);
+  const sampleVal = await page.inputValue("#json-input");
+  let sampleObj = null;
+  try { sampleObj = JSON.parse(sampleVal); } catch { /* stays null */ }
+  check("sample button fills the textarea with valid JSON", sampleObj !== null);
+  check("sample has 24 hours", sampleObj && sampleObj.hours && sampleObj.hours.length === 24);
+  const statusKind = await page.getAttribute("#json-status", "class");
+  check("sample loads with an OK status", statusKind.includes("alert-ok"), statusKind);
+  check("Fill-the-form button is enabled after a good load",
+    !(await page.isDisabled("#json-fill")));
+  await page.screenshot({ path: path.join(OUT, "06-paste-panel.png"), fullPage: true });
+
+  // Malformed JSON must be reported with a useful, honest message.
+  //
+  // V8 only reports an offset for some syntax errors, so assert the two things
+  // that must always hold: the error is surfaced, and it either names a position
+  // or explains that the input is malformed. Asserting a line/column
+  // unconditionally would force the page to invent one.
+  await page.fill("#json-input", '{"scenario_id": "x", "operator_notes": [}');
+  await page.click("#json-load");
+  await page.waitForTimeout(250);
+  const badJsonStatus = await page.textContent("#json-status");
+  check("malformed JSON is reported", badJsonStatus.includes("not valid JSON"), badJsonStatus.slice(0, 80));
+  check("malformed JSON error is actionable",
+    /line \d+, column \d+/.test(badJsonStatus) || /line|truncated|closing/i.test(badJsonStatus),
+    badJsonStatus.slice(0, 130));
+  check("Fill-the-form is disabled after a bad load", await page.isDisabled("#json-fill"));
+
+  // A multi-line paste in the "Unexpected token" class has no engine position,
+  // but the message does quote the offending character, which is what the reader
+  // needs. Assert that, rather than a line/column the engine never provides.
+  const multiLine = '{\n  "scenario_id": "x",\n  "operator_notes": ["a",],\n  "hours": []\n}';
+  await page.fill("#json-input", multiLine);
+  await page.click("#json-load");
+  await page.waitForTimeout(250);
+  const mlStatus = await page.textContent("#json-status");
+  check("multi-line malformed JSON quotes the offending token",
+    /Unexpected token/.test(mlStatus) && /line/.test(mlStatus), mlStatus.slice(0, 140));
+
+  // ...and the "position" class must render an actual line/column. Accept either
+  // shape: V8 sometimes appends its own "(line L column C)", and we supply one
+  // when it does not. What must never happen is a positioned error with no
+  // position shown, or one printed twice.
+  await page.fill("#json-input", '{\n  "scenario_id": "x",\n  "operator_notes": ["a"]\n  "hours": []\n}');
+  await page.click("#json-load");
+  await page.waitForTimeout(250);
+  const posStatus = await page.textContent("#json-status");
+  const lineColHits = posStatus.match(/line \d+\)?[,\s]+column \d+/g) || [];
+  check("a positioned syntax error renders line/column",
+    lineColHits.length >= 1, posStatus.slice(0, 150));
+  check("the position is not printed twice",
+    lineColHits.length === 1, `found ${lineColHits.length}: ${lineColHits.join(" | ")}`);
+
+  // A structurally-valid-but-wrong body must name the offending field.
+  const wrongHourCount = JSON.stringify({
+    scenario_id: "GRID-BAD",
+    operator_notes: ["a note"],
+    hours: [{ hour: 0, demand_kwh: 1, solar_kwh: 0, tariff_bdt_per_kwh: 1 }],
+    battery: {
+      capacity_kwh: 500, initial_energy_kwh: 200, minimum_energy_kwh: 50,
+      max_charge_kwh_per_hour: 100, max_discharge_kwh_per_hour: 100,
+    },
+  });
+  await page.fill("#json-input", wrongHourCount);
+  await page.click("#json-load");
+  await page.waitForTimeout(250);
+  const wrongStatus = await page.textContent("#json-status");
+  check("wrong hour count names 'hours'", wrongStatus.includes("hours"), wrongStatus.slice(0, 90));
+  check("wrong hour count says 24", wrongStatus.includes("24"), wrongStatus.slice(0, 90));
+
+  // An unknown key (a typo) must be named rather than surfacing as a bare 422.
+  // Keep the valid body intact and ADD a stray key, which is what an actual
+  // typo looks like — otherwise the missing-field error masks the real problem.
+  const typoBody = JSON.parse(sampleVal);
+  typoBody.noets = typoBody.operator_notes;
+  await page.fill("#json-input", JSON.stringify(typoBody));
+  await page.click("#json-load");
+  await page.waitForTimeout(250);
+  const typoStatus = await page.textContent("#json-status");
+  check("an unknown key is named", typoStatus.includes("noets"), typoStatus.slice(0, 90));
+
+  // Fill-the-form must move the pasted values into the visible inputs.
+  await page.click("#json-clear");
+  await page.waitForTimeout(150);
+  check("Clear empties the textarea", (await page.inputValue("#json-input")) === "");
+
+  await page.fill("#json-input", sampleVal);
+  await page.click("#json-load");
+  await page.waitForTimeout(250);
+  await page.click("#json-fill");
+  await page.waitForTimeout(300);
+  const filledHours = await page.locator("#hours-body tr").count();
+  check("Fill-the-form repopulates 24 rows", filledHours === 24, `got ${filledHours}`);
+  const filledCapacity = await page.inputValue("#b-capacity");
+  check("Fill-the-form sets the battery fields", Number(filledCapacity) === sampleObj.battery.capacity_kwh,
+    `got ${filledCapacity}`);
+  const filledNotes = await page.inputValue("#notes");
+  check("Fill-the-form sets the notes", filledNotes.split("\n").filter(Boolean).length ===
+    sampleObj.operator_notes.length, filledNotes.slice(0, 60));
+
+  // And the round trip: send the pasted JSON verbatim.
+  //
+  // Observe the outgoing request rather than waiting on #results — that panel is
+  // already visible from the earlier form run, so waiting on it reads a STALE
+  // result and cannot tell which payload produced it.
+  await page.fill("#json-input", sampleVal);
+  const sentForPaste = page.waitForRequest(
+    (r) => r.url().includes("optimize-energy") && r.method() === "POST",
+    { timeout: 120000 }
+  );
+  await page.click("#json-optimize");
+  const pasteReq = await sentForPaste;
+  let pasteSent = null;
+  try { pasteSent = JSON.parse(pasteReq.postData()); } catch { /* stays null */ }
+  check("the pasted panel sends the pasted JSON, not the form",
+    pasteSent !== null && pasteSent.scenario_id === sampleObj.scenario_id,
+    pasteSent ? `sent scenario_id ${pasteSent.scenario_id}, expected ${sampleObj.scenario_id}` : "unparsable body");
+  check("the pasted body carries its own 24 hours",
+    pasteSent !== null && Array.isArray(pasteSent.hours) && pasteSent.hours.length === 24);
+  check("the pasted body carries its own notes",
+    pasteSent !== null && Array.isArray(pasteSent.operator_notes) &&
+    pasteSent.operator_notes.length === sampleObj.operator_notes.length);
+
+  // Now confirm the rendered result matches that same scenario_id.
+  await page.waitForFunction(
+    (sid) => {
+      const raw = document.getElementById("raw-json");
+      if (!raw || !raw.textContent) return false;
+      try { return JSON.parse(raw.textContent).scenario_id === sid; } catch { return false; }
+    },
+    sampleObj.scenario_id,
+    { timeout: 120000 }
+  ).catch(() => {});
+  const pastedRaw = await page.textContent("#raw-json");
+  let pastedParsed = null;
+  try { pastedParsed = JSON.parse(pastedRaw); } catch { /* stays null */ }
+  check("Optimize-this-JSON returns a plan", pastedParsed !== null &&
+    Array.isArray(pastedParsed.hourly_plan) && pastedParsed.hourly_plan.length === 24,
+    pastedParsed ? `hours ${pastedParsed.hourly_plan && pastedParsed.hourly_plan.length}` : "no JSON");
+  check("the pasted path echoes its own scenario_id",
+    pastedParsed && pastedParsed.scenario_id === sampleObj.scenario_id,
+    pastedParsed ? String(pastedParsed.scenario_id) : "n/a");
+  await page.screenshot({ path: path.join(OUT, "07-paste-result.png"), fullPage: true });
+
   const finalErrors = pageErrors.concat(consoleErrors);
   check("no errors across the whole session", finalErrors.length === 0, finalErrors.join("; "));
 

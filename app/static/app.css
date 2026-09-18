@@ -314,6 +314,30 @@ tr.dir-nodis  td:first-child { box-shadow: inset 3px 0 0 var(--error); }
   border-radius: 8px; padding: .7rem; font-size: .76rem; font-family: var(--mono);
 }
 
+/* --------------------------------------------------- whole-JSON input block */
+/* The paste-a-request panel spans both columns so a multi-line scenario fits
+   without horizontal scrolling inside the textarea. */
+.panel-json { grid-column: 1 / -1; }
+.panel-json textarea {
+  font-family: var(--mono); font-size: .8rem; line-height: 1.5;
+  white-space: pre; tab-size: 2;
+}
+.panel-json .cta-row { margin-top: .8rem; }
+
+.json-raw {
+  margin: .8rem 0 0; max-height: 260px; overflow: auto;
+  background: var(--surface-2); border: 1px solid var(--border);
+  border-radius: 8px; padding: .7rem; font-size: .76rem; font-family: var(--mono);
+}
+.alert-ok {
+  background: color-mix(in srgb, var(--batt) 12%, var(--surface));
+  border: 1px solid color-mix(in srgb, var(--batt) 40%, var(--border));
+}
+.alert-warn {
+  background: color-mix(in srgb, var(--accent) 12%, var(--surface));
+  border: 1px solid color-mix(in srgb, var(--accent) 40%, var(--border));
+}
+
 /* -------------------------------------------------------------------- foot */
 .foot { border-top: 1px solid var(--border); padding: 1.2rem 0 2rem; color: var(--text-dim); font-size: .8rem; }
 

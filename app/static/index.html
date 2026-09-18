@@ -112,6 +112,38 @@ The cafeteria menu changes tomorrow.</textarea>
       </p>
     </section>
 
+    <!-- --------------------------------------------------- whole-JSON input -->
+    <section class="panel panel-json" aria-labelledby="h-json">
+      <h2 id="h-json">Paste a whole request</h2>
+      <p class="hint" id="json-hint">
+        A judge can skip the form entirely: paste a complete <code>POST /optimize-energy</code>
+        request body here and press <strong>Load JSON</strong>. Use <strong>Optimize</strong>
+        to send exactly what you pasted, or <strong>Fill the form</strong> to load it into the
+        fields above so every value becomes editable.
+      </p>
+      <textarea id="json-input" rows="7" spellcheck="false"
+                aria-labelledby="h-json" aria-describedby="json-hint"
+                placeholder='{
+  "scenario_id": "GRID-DEMO",
+  "operator_notes": ["Do not charge the battery between 2 PM and 4 PM."],
+  "hours": [ {"hour":0,"demand_kwh":180,"solar_kwh":0,"tariff_bdt_per_kwh":7}, … 24 total ],
+  "battery": {"capacity_kwh":500,"initial_energy_kwh":200,"minimum_energy_kwh":50,
+              "max_charge_kwh_per_hour":100,"max_discharge_kwh_per_hour":100}
+}'></textarea>
+
+      <div class="cta-row">
+        <button id="json-load" class="btn btn-primary" type="button">Load JSON</button>
+        <button id="json-fill" class="btn btn-ghost" type="button" disabled>Fill the form</button>
+        <button id="json-optimize" class="btn btn-ghost" type="button">Optimize this JSON</button>
+        <button id="json-sample" class="btn btn-ghost btn-sm" type="button">Paste a sample request</button>
+        <button id="json-clear" class="btn btn-ghost btn-sm" type="button">Clear</button>
+      </div>
+
+      <div id="json-status" class="alert" role="status" hidden></div>
+      <pre id="json-raw" class="json-raw" hidden></pre>
+    </section>
+  </div>
+
     <!-- ------------------------------------------------------------ results -->
     <section class="panel panel-results" aria-labelledby="h-results">
       <h2 id="h-results">Result</h2>

@@ -63,13 +63,35 @@ cost-minimizing battery/grid schedule → deterministic summary**. Rules live in
   `.table-scroll` → `.panel` → `.layout` and stretches the page past the viewport. Park
   `min-width: 0` on the grid and its items, and give the wide table explicit column budgets so
   it overflows its own scroll container instead.
+- **The judge-facing entry point is the paste-a-whole-JSON panel**, not the form. It POSTs the
+  pasted object verbatim; "Fill the form" is the bridge back to the editable fields. Client
+  validation may be **stricter than the server, never looser** — "looks fine" followed by a 422
+  is worse than no client validation. Unknown keys are reported *first*, so a typo like `noets`
+  names the stray key instead of the field it displaced.
+- **Do not invent a JSON error position.** V8's `Unexpected token` carries no offset, and a
+  prefix-scan cannot recover it (`{` alone is already a parse error, so it reports offset 0).
+  Show the engine's message; append line/column only when it supplied an offset, never twice.
 - **`tests/verify_frontend.js` needs the result panel rendered to catch layout bugs.** The bare
   page measured a clean 390px while the post-run page overflowed by 30px. It also needs
   Playwright, installed into the managed Node workspace, not declared in `requirements.txt`;
   Node resolves `require` relative to the *script*, so `NODE_PATH` must point at that workspace.
+  For the paste round trip, assert on the **outgoing request** (`page.waitForRequest`), not on
+  `#results` becoming visible — that panel is already visible from the earlier form run, so
+  awaiting it reads a stale result and produces a false failure.
+- **Testing the IIFE-embedded JS validator:** extract the function by brace-matching and `eval`
+  it in Node. Pass paths via **environment variables, not argv** (`node -e` shifts
+  `process.argv` indices), and parse all of stdout when the JS pretty-prints JSON.
 - **Docker ships the UI only because `COPY app ./app` happens to include `app/static/`.**
   `test_dockerfile_ships_the_frontend_static_assets` asserts that coverage and names the missing
   assets, because the COPY-existence test alone passes while the deployed page is blank.
+
+## Repo safety
+
+- **Do not `git checkout --` a source file to undo a small experiment.** HEAD can predate a
+  whole session's uncommitted work (the frontend commit `a0461c1` landed mid-session), so it
+  silently reverts far more than the patch. Keep a `/tmp` copy and reverse the exact string
+  instead. The stale copy may itself be from an earlier patch — assert the anchor is present
+  before replacing, and verify the anchor count is 1.
 
 ## Testing
 
@@ -77,7 +99,7 @@ cost-minimizing battery/grid schedule → deterministic summary**. Rules live in
   `--base-url` runs the same checks over live HTTP. **`--delay 15` is required on a free Groq
   key** (8000 tokens/minute, ~1500–2500 per request → ~5 cases max back-to-back).
 - Suite: `test_docker_contract.py` (10), `test_config.py` (10), `test_llm_stage.py` (14),
-  `test_api_e2e.py` (16), `test_frontend.py` (15) = **65 passed**. `pytest` is not preinstalled
+  `test_api_e2e.py` (16), `test_frontend.py` (21) = **71 passed**. `pytest` is not preinstalled
   in the isolated venv — install it first.
 - The stub suites override `_post` to return a queued **string** (matching `_post`'s contract;
   returning an object is a real bug that was hit once).

@@ -59,11 +59,18 @@ node tests/verify_frontend.js http://127.0.0.1:10000 ./shots
 
 33 assertions across load, theme toggle, the sample-notes button, a live
 optimizer run (which calls the configured LLM, so it needs `GROQ_API_KEY`), the
-chart geometry, the JSON invariants, and the 390px layout. Exit code is non-zero
-if anything fails. Screenshots land in the out-dir.
+chart geometry, the JSON invariants, the 390px layout, and the paste-a-JSON panel
+(sample load, malformed JSON, wrong hour count, unknown key, fill-the-form, and a
+round trip that asserts the panel sends **its own** payload rather than the form's).
 
 If the responsive check fails it prints the offending elements with their
 geometry, so the regression is actionable rather than a bare pixel count.
+
+When asserting on the paste round trip, observe the outgoing request with
+`page.waitForRequest` rather than waiting for `#results` to become visible: that
+panel is already visible from the earlier form run, so awaiting it reads a stale
+result and cannot tell which payload produced it. This produced a false failure
+once.
 
 ## `capture_request.js` — debugging a bad request
 
@@ -73,5 +80,18 @@ node tests/capture_request.js http://127.0.0.1:10000
 
 Intercepts the outgoing `POST /optimize-energy` and prints the body the page
 actually sent plus the response. Use this when the UI reports an error: it shows
-the real payload rather than a reconstruction, so a bug in `buildRequest()`
-cannot hide behind a stub.
+the real payload rather than a reconstruction, so a bug in `buildRequest()` or in
+the paste path cannot hide behind a stub.
+
+## Things these harnesses have caught
+
+Worth knowing, because none were visible without a renderer:
+
+- a duplicate `id="notes"` on a heading and a textarea, making `getElementById`
+  return the heading (`page.inputValue: Node is not an <input>, …`);
+- 30px of horizontal overflow at 390px, **only after** a run — a grid item's
+  `min-width: auto` let the six-column schedule table's min-content width stretch
+  the whole page. The bare page measured a clean 390px, so any layout check must
+  run after the dynamic content exists;
+- a paste-path assertion that was reading a **stale** result panel, fixed by
+  observing the request instead.

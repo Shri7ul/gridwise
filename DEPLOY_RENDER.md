@@ -364,6 +364,8 @@ it currently contains placeholder text.
 - [ ] `curl "$BASE/api"` returns the JSON index with `"ui":"/"` (it moved off `/`)
 - [ ] The UI loads in a browser, **Optimize schedule** returns a plan, and the page
       is usable at phone width (no horizontal scroll)
+- [ ] The **Paste a whole request** panel loads a scenario and **Optimize this
+      JSON** returns a plan (the judge-facing path)
 - [ ] Remote `curl "$BASE/health"` returns `{"status":"ok"}`
 - [ ] Remote `POST /optimize-energy` returns 200 with a 24-hour plan
 - [ ] `python tests/run_public_samples.py --base-url "$BASE" --delay 15` → 10/10

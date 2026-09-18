@@ -94,7 +94,41 @@ Open the root URL and you get a page that lets you:
 - press **Optimize schedule** and read the result: total cost, grid energy, peak
   grid, one card per interpreted directive, a hand-rolled SVG chart of the hourly
   grid/solar/battery profile, the full 24-row schedule with the hours touched by a
-  directive highlighted, and the raw JSON response.
+  directive highlighted, and the raw JSON response;
+- **or skip the form entirely** — see below.
+
+### Paste a whole request JSON
+
+The bottom panel takes a complete `POST /optimize-energy` body. A judge who wants
+to bring their own scenario does not have to retype it into 72 fields.
+
+| Button | Does |
+| --- | --- |
+| **Load JSON** | parses and validates, then enables the two buttons below |
+| **Optimize this JSON** | POSTs exactly what you pasted — the form is not consulted |
+| **Fill the form** | loads the pasted values into the fields above so every cell becomes editable |
+| **Paste a sample request** | fills the box with a complete valid 24-hour scenario |
+| **Clear** | empties the box and resets the panel state |
+
+Validation happens on the client before anything is sent, so a mistake produces a
+specific message rather than a bare `HTTP 400`:
+
+- malformed JSON → the engine's own message, **plus a line/column when the engine
+  reports an offset** (it does not for `Unexpected token`; the page says so
+  honestly instead of pointing at the wrong character);
+- an unknown key → the stray key is named, so a typo like `noets` is caught
+  directly rather than being reported as the field it displaced;
+- a wrong hour count → `"hours" must have exactly 24 entries (got 23)`;
+- an impossible battery → `"battery.minimum_energy_kwh" (400) exceeds the starting
+  energy (200)`.
+
+> The client check is a **friendly front end, not a substitute for the server** —
+> the service is authoritative and still validates everything. What the client
+> must never do is *accept* something the server will reject, because a judge told
+> "this looks fine" who then gets a `422` is worse off than one who got no client
+> validation at all. `test_paste_validator_output_passes_the_real_model` asserts
+> that direction: everything the client accepts is fed through
+> `OptimizationRequest.model_validate` in the test suite.
 
 Route summary:
 
@@ -133,9 +167,13 @@ Design constraints behind it:
 is served as HTML, every asset URL resolves, no duplicate element `id`s, every
 `id` the JS looks up exists, every class the JS applies has a CSS rule, no external
 URLs, no credential or local path in the served bytes, and the request body the
-page builds passes `OptimizationRequest`. Runtime behaviour (the chart, the 390px
-layout, the live run) is verified by `tests/verify_frontend.js` in a real headless
-Chromium — see [`tests/README.md`](tests/README.md).
+page builds passes `OptimizationRequest`. The paste path is covered from both
+sides: the validator is **executed in Node** against a table of malformed inputs
+(each must be rejected *and* name the offending field), and everything it accepts
+is then run through the real Pydantic model. Runtime behaviour (the chart, the
+390px layout, the paste round trip, the live run) is verified by
+`tests/verify_frontend.js` in a real headless Chromium — see
+[`tests/README.md`](tests/README.md).
 
 ---
 
@@ -537,7 +575,7 @@ python tests/run_public_samples.py --offline
 Or all of it at once:
 
 ```bash
-python -m pytest tests/ -q        # 65 passed
+python -m pytest tests/ -q        # 71 passed
 ```
 
 | Suite | Tests | Covers |
@@ -546,7 +584,7 @@ python -m pytest tests/ -q        # 65 passed
 | `tests/test_config.py` | 10 | `.env` is actually read, real env vars win over `.env`, credential priority, honest "unconfigured" reporting, repository-wide secret sweep, `.env.example` placeholder integrity |
 | `tests/test_llm_stage.py` | 14 | defensive JSON extraction (fences, prose, trailing commas), retry recovery, repair pass, unsupported-type rejection, secret redaction |
 | `tests/test_api_e2e.py` | 16 | `/health`, full pipeline over HTTP for all 10 public cases, response schema, totals, 400/422/500 taxonomy, non-finite input rejection, Swagger request-body contract, **OpenAPI `$ref` resolvability**, secret-leak sweep |
-| `tests/test_frontend.py` | 15 | `GET /` is HTML and `/api` is still the JSON index, every asset URL resolves with the right MIME type, no duplicate element `id`s, labels/`aria` point at real ids, every id the JS looks up exists, every class the JS applies is styled, no external dependency, no credential or local path in the served bytes, the page's request body passes `OptimizationRequest`, every field the UI reads exists in the response model, JS directive labels match the backend enum |
+| `tests/test_frontend.py` | 21 | `GET /` is HTML and `/api` is still the JSON index, every asset URL resolves with the right MIME type, no duplicate element `id`s, labels/`aria` point at real ids, every id the JS looks up exists, every class the JS applies is styled, no external dependency, no credential or local path in the served bytes, the page's request body passes `OptimizationRequest`, every field the UI reads exists in the response model, JS directive labels match the backend enum, **the paste-a-JSON validator is executed in Node — every rejection must name the offending field, and everything it accepts must pass the real Pydantic model** |
 | `tests/run_public_samples.py` | 10 cases | independent rule replay against a live or in-process service, plus optimization-quality ratio |
 
 All suites pass on Python 3.12 and 3.13.
